@@ -1,23 +1,42 @@
+/**
+ * Mini Player Extension - Player Window Controller
+ * Manages the mini player UI and communicates with the source tab
+ */
+
 (() => {
+  // Configuration constants
+  const STATE_SYNC_DELAY = 700;
+  const WINDOW_SAVE_DELAY = 300;
+
+  // DOM Elements
+  const elements = {
+    video: document.getElementById('streamVideo'),
+    playBtn: document.getElementById('playBtn'),
+    seekBar: document.getElementById('seekBar'),
+    timeLabel: document.getElementById('time'),
+    muteBtn: document.getElementById('muteBtn'),
+    topToggle: document.getElementById('topToggle')
+  };
+
+  // Player state
+  const state = {
+    isPlaying: false,
+    isMuted: false,
+    isAlwaysOnTop: false,
+    stream: null,
+    saveTimer: null
+  };
+
+  // Parse URL parameters
   const params = new URLSearchParams(window.location.search);
   const tabId = Number(params.get('tabId'));
   const sourceUrl = params.get('sourceUrl') || '';
 
-  const video = document.getElementById('streamVideo');
-  const playBtn = document.getElementById('playBtn');
-  const seekBar = document.getElementById('seekBar');
-  const timeLabel = document.getElementById('time');
-  const muteBtn = document.getElementById('muteBtn');
-  const topToggle = document.getElementById('topToggle');
-
-  let isPlaying = false;
-  let isMuted = false;
-  let isAlwaysOnTop = false;
-  let stream = null;
-  let lastSavedPos = null;
-  let lastSavedSize = null;
-  let saveTimer = null;
-
+  /**
+   * Format seconds into MM:SS time string
+   * @param {number} seconds - Time in seconds
+   * @returns {string} Formatted time string
+   */
   function formatTime(seconds) {
     if (!Number.isFinite(seconds) || seconds < 0) {
       return '0:00';
@@ -27,17 +46,24 @@
     return `${mins}:${secs}`;
   }
 
+  /**
+   * Update the time display and seek bar position
+   */
   function updateTimeDisplay() {
-    const current = video.currentTime || 0;
-    const duration = video.duration || 0;
-    timeLabel.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
-    seekBar.value = duration > 0 ? (current / duration) * 100 : 0;
+    const current = elements.video.currentTime || 0;
+    const duration = elements.video.duration || 0;
+    
+    elements.timeLabel.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
+    elements.seekBar.value = duration > 0 ? (current / duration) * 100 : 0;
   }
 
+  /**
+   * Send a message to the source tab with retry logic
+   * @param {Object} message - Message to send
+   * @param {number} retries - Number of retry attempts remaining
+   */
   function sendToTab(message, retries = 3) {
-    if (!tabId) {
-      return;
-    }
+    if (!tabId) return;
 
     chrome.tabs.sendMessage(tabId, message, () => {
       if (chrome.runtime.lastError) {
@@ -50,34 +76,47 @@
     });
   }
 
+  /**
+   * Toggle video playback state
+   */
   function togglePlayback() {
-    if (isPlaying) {
+    if (state.isPlaying) {
       sendToTab({ action: 'pause' });
-      isPlaying = false;
-      playBtn.textContent = '▶';
+      state.isPlaying = false;
+      elements.playBtn.textContent = '▶';
     } else {
       sendToTab({ action: 'play' });
-      isPlaying = true;
-      playBtn.textContent = '⏸';
+      state.isPlaying = true;
+      elements.playBtn.textContent = '⏸';
     }
   }
 
+  /**
+   * Seek to a specific position in the video
+   * @param {number} value - Seek bar percentage value (0-100)
+   */
   function seekTo(value) {
-    const duration = video.duration || 0;
+    const duration = elements.video.duration || 0;
     const time = (value / 100) * duration;
     sendToTab({ action: 'seek', time });
   }
 
+  /**
+   * Save window position and size to storage
+   */
   function saveWindowState() {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
+    clearTimeout(state.saveTimer);
+    state.saveTimer = setTimeout(() => {
       chrome.storage.local.set({
         playerPos: { left: window.screenX, top: window.screenY },
         playerSize: { width: window.outerWidth, height: window.outerHeight }
       });
-    }, 300);
+    }, WINDOW_SAVE_DELAY);
   }
 
+  /**
+   * Restore saved window state from storage
+   */
   function restoreWindowState() {
     chrome.storage.local.get(['playerPos', 'playerSize', 'playbackPosition', 'videoUrl', 'alwaysOnTop'], (data) => {
       if (data.playerPos) {
@@ -87,38 +126,45 @@
         window.resizeTo(data.playerSize.width, data.playerSize.height);
       }
       if (data.alwaysOnTop) {
-        isAlwaysOnTop = true;
-        topToggle.classList.add('active');
+        state.isAlwaysOnTop = true;
+        elements.topToggle.classList.add('active');
       }
-      if (sourceUrl && data.videoUrl === sourceUrl) {
-        sendToTab({ action: 'seek', time: data.playbackPosition || 0 });
+      if (sourceUrl && data.videoUrl === sourceUrl && data.playbackPosition) {
+        sendToTab({ action: 'seek', time: data.playbackPosition });
       }
     });
   }
 
+  /**
+   * Toggle always-on-top mode
+   */
   function toggleAlwaysOnTop() {
-    isAlwaysOnTop = !isAlwaysOnTop;
-    chrome.storage.local.set({ alwaysOnTop: isAlwaysOnTop });
-    topToggle.classList.toggle('active', isAlwaysOnTop);
-    topToggle.textContent = isAlwaysOnTop ? '📌' : '⤴';
-    if (isAlwaysOnTop) {
+    state.isAlwaysOnTop = !state.isAlwaysOnTop;
+    chrome.storage.local.set({ alwaysOnTop: state.isAlwaysOnTop });
+    elements.topToggle.classList.toggle('active', state.isAlwaysOnTop);
+    elements.topToggle.textContent = state.isAlwaysOnTop ? '📌' : '⤴';
+    
+    if (state.isAlwaysOnTop) {
       window.focus();
-      // Chrome MV3 does not expose a direct Always on Top API, so this acts as a visual toggle.
-      console.info('Always on Top ถูกเลือกไว้. ใน Chrome รุ่นนี้ อาจต้องรีสตาร์ทหน้าต่างเพื่อให้ผลลัพธ์ชัดเจน');
+      console.info('Mini Player: Always on Top enabled. May require window restart for full effect.');
     }
   }
 
+  /**
+   * Toggle audio mute state
+   */
   function toggleMute() {
-    isMuted = !isMuted;
-    const action = isMuted ? 'mute' : 'unmute';
+    state.isMuted = !state.isMuted;
+    const action = state.isMuted ? 'mute' : 'unmute';
     sendToTab({ action });
-    muteBtn.textContent = isMuted ? '🔇' : '🔊';
+    elements.muteBtn.textContent = state.isMuted ? '🔇' : '🔊';
   }
 
-  async function startCapture() {
-    if (!tabId) {
-      return;
-    }
+  /**
+   * Start capturing the tab's video stream
+   */
+  function startCapture() {
+    if (!tabId) return;
 
     chrome.tabCapture.capture({ audio: true, video: true }, (captureStream) => {
       if (!captureStream) {
@@ -126,41 +172,52 @@
         return;
       }
 
-      stream = captureStream;
-      video.srcObject = stream;
-      video.play().catch(() => {
+      state.stream = captureStream;
+      elements.video.srcObject = captureStream;
+      elements.video.play().catch(() => {
         console.warn('Mini Player: autoplay was blocked by the browser');
       });
     });
   }
 
-  playBtn.addEventListener('click', togglePlayback);
-  seekBar.addEventListener('input', (event) => seekTo(Number(event.target.value)));
-  muteBtn.addEventListener('click', toggleMute);
-  topToggle.addEventListener('click', toggleAlwaysOnTop);
-  window.addEventListener('resize', saveWindowState);
-  window.addEventListener('move', saveWindowState);
-  window.addEventListener('beforeunload', saveWindowState);
-  video.addEventListener('timeupdate', updateTimeDisplay);
-  video.addEventListener('loadedmetadata', updateTimeDisplay);
-
-  sendToTab({ action: 'getState' }, 5);
-  window.setTimeout(() => {
+  /**
+   * Sync player state with the source tab
+   */
+  function syncWithTab() {
     chrome.tabs.sendMessage(tabId, { action: 'getState' }, (response) => {
       if (chrome.runtime.lastError) {
         console.warn('Mini Player: tab message not available yet', chrome.runtime.lastError.message);
         return;
       }
-      if (!response?.ok) {
-        return;
-      }
-      isPlaying = !response.paused;
-      playBtn.textContent = isPlaying ? '⏸' : '▶';
-      isMuted = response.muted;
-      muteBtn.textContent = isMuted ? '🔇' : '🔊';
-    });
-  }, 700);
+      
+      if (!response?.ok) return;
 
+      state.isPlaying = !response.paused;
+      elements.playBtn.textContent = state.isPlaying ? '⏸' : '▶';
+      state.isMuted = response.muted;
+      elements.muteBtn.textContent = state.isMuted ? '🔇' : '🔊';
+    });
+  }
+
+  // Event Listeners
+  elements.playBtn.addEventListener('click', togglePlayback);
+  elements.seekBar.addEventListener('input', (event) => seekTo(Number(event.target.value)));
+  elements.muteBtn.addEventListener('click', toggleMute);
+  elements.topToggle.addEventListener('click', toggleAlwaysOnTop);
+  
+  // Window state management
+  window.addEventListener('resize', saveWindowState);
+  window.addEventListener('move', saveWindowState);
+  window.addEventListener('beforeunload', saveWindowState);
+  
+  // Video state updates
+  elements.video.addEventListener('timeupdate', updateTimeDisplay);
+  elements.video.addEventListener('loadedmetadata', updateTimeDisplay);
+
+  // Initialize player
   restoreWindowState();
   startCapture();
+  
+  // Initial state sync after a short delay
+  window.setTimeout(syncWithTab, STATE_SYNC_DELAY);
 })();

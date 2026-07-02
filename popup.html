@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mini Player</title>
     <style>
+      /* Base styles */
       body {
         width: 260px;
         padding: 16px;
@@ -14,11 +15,14 @@
         color: #f9fafb;
       }
 
+      /* Heading */
       h3 {
         margin: 0 0 12px;
         font-size: 16px;
+        font-weight: 600;
       }
 
+      /* Button styles */
       button {
         width: 100%;
         padding: 10px 12px;
@@ -29,12 +33,18 @@
         cursor: pointer;
         font-size: 14px;
         font-weight: 600;
+        transition: background-color 0.2s ease;
       }
 
       button:hover {
         background: #1d4ed8;
       }
 
+      button:active {
+        background: #1e40af;
+      }
+
+      /* Note text */
       .note {
         margin-top: 12px;
         font-size: 12px;
@@ -45,11 +55,11 @@
   </head>
   <body>
     <h3>Mini Player</h3>
-    <button id="open">เปิดหน้าต่างแยก</button>
+    <button id="open">Open Separate Window</button>
     <p class="note">
-      รองรับวิดีโอในแท็บปัจจุบัน<br />
-      จดจำตำแหน่งเล่นสุดท้าย<br />
-      ไม่เป็น Top Most โดยค่าเริ่มต้น
+      Supports video in current tab<br />
+      Remembers last playback position<br />
+      Not topmost by default
     </p>
     <script src="popup.js"></script>
   </body>

@@ -1,41 +1,92 @@
 # Mini Player Extension
 
-Mini Player Extension เป็น Chrome Extension ที่เปิดวิดีโอจากแท็บปัจจุบันในหน้าต่างแยกแบบ popup window โดยใช้ tab capture และ WebRTC stream เพื่อให้คุณดูวิดีโอพร้อมควบคุม play/pause, seek, mute และจำตำแหน่งเล่นล่าสุด
+A Chrome extension that provides a separate mini player window for videos playing in any browser tab. Perfect for picture-in-picture style video viewing while browsing other tabs.
 
-## ฟีเจอร์หลัก
-- เปิดวิดีโอจากแท็บปัจจุบันในหน้าต่างแยก
-- Play/Pause และ Seek
-- แสดงเวลาเล่น/ความยาววิดีโอ
-- จำตำแหน่ง playback ล่าสุด
-- จำตำแหน่งและขนาดหน้าต่างล่าสุด
-- ปุ่ม toggle สำหรับสถานะ mute และตัวเลือก Always on Top (แบบสถานะใน UI)
-- UI แบบ Dark theme ภาษาไทย
+## Features
 
-## วิธีติดตั้ง
-1. เปิด Chrome และไปที่ chrome://extensions/
-2. เปิด Developer mode
-3. คลิก Load unpacked
-4. เลือกโฟลเดอร์ที่มีไฟล์ extension นี้
-5. เปิด extension จากแถบเครื่องมือ และกดปุ่มเปิดหน้าต่างแยก
+- **Separate Player Window**: Opens video content in a detachable popup window
+- **Playback Position Memory**: Automatically saves and restores your playback position
+- **Video Controls**: Play/pause, seek, and mute/unmute functionality
+- **Always on Top**: Optional always-on-top mode (visual indicator)
+- **Window State Persistence**: Remembers window position and size
 
-## วิธีใช้งาน
-1. เปิดเว็บไซต์ที่มีวิดีโอ เช่น YouTube
-2. คลิกไอคอน extension
-3. กดปุ่ม เปิดหน้าต่างแยก
-4. หน้าต่าง Mini Player จะเปิดขึ้นมาและเริ่มสตรีมวิดีโอจากแท็บปัจจุบัน
-5. ใช้ปุ่มควบคุมบนหน้าต่างแยกเพื่อเล่น/หยุด, เลื่อนเวลาและปิดเสียง
+## Installation
 
-## ข้อจำกัดที่ควรรู้
-- Chrome MV3 ไม่มี API แบบ native สำหรับ Always on Top โดยตรง ดังนั้นปุ่ม toggle จะเป็นตัวแสดงสถานะและอาจต้องรีสตาร์ทหน้าต่างเพื่อให้ผลลัพธ์ชัดเจน
-- การ capture ทำงานได้ดีกับเว็บทั่วไปและ YouTube แต่บางเว็บไซต์ที่ใช้ DRM เช่น Netflix หรือ Disney+ อาจไม่รองรับ
-- บางไซต์อาจปิด autoplay ทำให้ต้องกดเล่นเองครั้งแรก
+1. Open Chrome and navigate to `chrome://extensions/`
+2. Enable "Developer mode" in the top right corner
+3. Click "Load unpacked"
+4. Select this extension's directory
+5. The extension icon will appear in your toolbar
 
-## ไฟล์หลัก
-- [manifest.json](manifest.json)
-- [background.js](background.js)
-- [content.js](content.js)
-- [popup.html](popup.html)
-- [popup.js](popup.js)
-- [player.html](player.html)
-- [player.css](player.css)
-- [player.js](player.js)
+## Usage
+
+1. Navigate to any webpage with a video
+2. Click the Mini Player extension icon
+3. Click "Open Separate Window" to launch the mini player
+4. Use the controls to manage playback:
+   - ▶/⏸: Play/Pause
+   - Seek bar: Jump to any position
+   - 🔊/🔇: Mute/Unmute
+   - ⤴/📌: Toggle always-on-top mode
+
+## Files Structure
+
+```
+├── manifest.json      # Extension configuration
+├── background.js      # Service worker for window management
+├── content.js         # Content script for video detection
+├── player.html        # Mini player UI
+├── player.js          # Player controller logic
+├── player.css         # Player styles
+├── popup.html         # Extension popup UI
+├── popup.js           # Popup controller
+└── README.md          # This file
+```
+
+## Technical Details
+
+- **Manifest Version**: 3 (latest Chrome extension format)
+- **Minimum Chrome Version**: 114
+- **Permissions Required**:
+  - `activeTab`: Access to current tab
+  - `tabCapture`: Capture tab video/audio stream
+  - `storage`: Save playback position and preferences
+  - `tabs`: Query tab information
+
+## Architecture
+
+The extension consists of three main components:
+
+1. **Background Service Worker** (`background.js`)
+   - Handles window creation
+   - Manages message routing between components
+
+2. **Content Script** (`content.js`)
+   - Injected into all webpages
+   - Detects video elements
+   - Monitors and controls video playback
+
+3. **Player Window** (`player.html`, `player.js`, `player.css`)
+   - Displays captured video stream
+   - Provides user interface controls
+   - Communicates with content script via messaging
+
+## Development
+
+To modify the extension:
+
+1. Make changes to the source files
+2. Go to `chrome://extensions/`
+3. Click the refresh icon on the Mini Player card
+4. Test the changes
+
+## Troubleshooting
+
+- **No video detected**: Ensure the page has a `<video>` element loaded
+- **Player won't open**: Check that the extension has necessary permissions
+- **Position not saved**: Verify Chrome storage is enabled
+- **Autoplay blocked**: Browser may require user interaction before autoplay
+
+## License
+
+MIT License
