@@ -166,9 +166,11 @@
   function startCapture() {
     if (!tabId) return;
 
+    // Note: tabCapture.capture doesn't need targetTabId in options
+    // The capture is automatically targeted at the active tab when called from a popup/player context
     chrome.tabCapture.capture({ audio: true, video: true }, (captureStream) => {
       if (!captureStream) {
-        console.warn('Mini Player: tab capture failed');
+        console.warn('Mini Player: tab capture failed', chrome.runtime.lastError?.message);
         return;
       }
 
@@ -182,11 +184,19 @@
 
   /**
    * Sync player state with the source tab
+   * @param {number} retries - Number of retry attempts remaining
    */
-  function syncWithTab() {
+  function syncWithTab(retries = 3) {
+    if (!tabId) return;
+    
     chrome.tabs.sendMessage(tabId, { action: 'getState' }, (response) => {
       if (chrome.runtime.lastError) {
-        console.warn('Mini Player: tab message not available yet', chrome.runtime.lastError.message);
+        if (retries > 0) {
+          console.debug(`Mini Player: syncing state, retry ${4 - retries}/3...`);
+          window.setTimeout(() => syncWithTab(retries - 1), 500);
+          return;
+        }
+        console.warn('Mini Player: unable to sync with tab', chrome.runtime.lastError.message);
         return;
       }
       
@@ -218,6 +228,6 @@
   restoreWindowState();
   startCapture();
   
-  // Initial state sync after a short delay
-  window.setTimeout(syncWithTab, STATE_SYNC_DELAY);
+  // Initial state sync after a short delay (with retry logic built-in)
+  window.setTimeout(() => syncWithTab(3), STATE_SYNC_DELAY);
 })();
