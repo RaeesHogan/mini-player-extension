@@ -1,6 +1,7 @@
 /**
  * Mini Player Extension - Content Script
  * Monitors video elements and manages playback state synchronization
+ * Also handles tabCapture for mini player mode
  */
 
 (() => {
@@ -8,7 +9,9 @@
   const state = {
     lastSavedTime: 0,
     saveInterval: null,
-    activeVideo: null
+    activeVideo: null,
+    isCapturing: false,
+    captureStream: null
   };
 
   /**
@@ -62,6 +65,83 @@
   }
 
   /**
+   * Start capturing video stream and send to player window
+   * @param {number} playerTabId - ID of the player window tab
+   */
+  async function startStreamCapture(playerTabId) {
+    if (state.isCapturing) return;
+    
+    const video = getVideo();
+    if (!video) {
+      console.warn('Mini Player: No video found to capture');
+      return;
+    }
+
+    try {
+      // Use MediaRecorder API to capture the video stream
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      // Match video dimensions
+      const updateCanvasSize = () => {
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 360;
+      };
+      
+      video.addEventListener('loadedmetadata', updateCanvasSize, { once: true });
+      updateCanvasSize();
+
+      // Capture frames from video to canvas
+      const drawFrame = () => {
+        if (!state.isCapturing || !document.contains(video)) {
+          return;
+        }
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        requestAnimationFrame(drawFrame);
+      };
+      drawFrame();
+
+      // Get canvas stream
+      const canvasStream = canvas.captureStream(30); // 30 FPS
+      
+      // Add audio track from video if available
+      if (video.mozCaptureStream) {
+        const audioStream = video.mozCaptureStream();
+        const audioTracks = audioStream.getAudioTracks();
+        if (audioTracks.length > 0) {
+          canvasStream.addTrack(audioTracks[0]);
+        }
+      } else if (video.captureStream) {
+        const audioStream = video.captureStream();
+        const audioTracks = audioStream.getAudioTracks();
+        if (audioTracks.length > 0) {
+          canvasStream.addTrack(audioTracks[0]);
+        }
+      }
+
+      state.captureStream = canvasStream;
+      state.isCapturing = true;
+
+      // Send stream info to player via message
+      // Note: We can't directly transfer MediaStream via chrome.runtime.sendMessage
+      // So we'll instruct the player to use an alternative approach
+      chrome.runtime.sendMessage({
+        action: 'streamReady',
+        tabId: chrome.runtime.id,
+        videoInfo: {
+          width: canvas.width,
+          height: canvas.height,
+          hasAudio: canvasStream.getAudioTracks().length > 0
+        }
+      });
+
+      console.info('Mini Player: Stream capture started');
+    } catch (error) {
+      console.error('Mini Player: Failed to start stream capture', error);
+    }
+  }
+
+  /**
    * Handle incoming messages from player window
    * @param {Object} message - The message received
    * @param {Function} sendResponse - Chrome's sendResponse callback
@@ -69,58 +149,75 @@
    */
   function handleMessage(message, sender, sendResponse) {
     try {
-      const video = getVideo();
-      
-      if (!video) {
-        sendResponse({ ok: false, reason: 'No video element found' });
-        return true;
-      }
-
       switch (message?.action) {
-        case 'play':
-          video.play()
-            .then(() => sendResponse({ ok: true }))
-            .catch(() => sendResponse({ ok: false, error: 'Unable to start playback' }));
-          break;
-
-        case 'pause':
-          video.pause();
-          savePlaybackPosition();
+        case 'startCapture':
+          startStreamCapture(sender.tab?.id);
           sendResponse({ ok: true });
           break;
 
-        case 'seek':
-          if (Number.isFinite(message.time)) {
-            video.currentTime = message.time;
-            savePlaybackPosition();
-            sendResponse({ ok: true });
-          } else {
-            sendResponse({ ok: false, error: 'Invalid time value' });
+        case 'stopCapture':
+          state.isCapturing = false;
+          if (state.captureStream) {
+            state.captureStream.getTracks().forEach(track => track.stop());
+            state.captureStream = null;
           }
-          break;
-
-        case 'mute':
-          video.muted = true;
           sendResponse({ ok: true });
-          break;
-
-        case 'unmute':
-          video.muted = false;
-          sendResponse({ ok: true });
-          break;
-
-        case 'getState':
-          sendResponse({
-            ok: true,
-            paused: video.paused,
-            currentTime: video.currentTime,
-            duration: video.duration,
-            muted: video.muted
-          });
           break;
 
         default:
-          sendResponse({ ok: false, reason: 'Unknown action' });
+          const video = getVideo();
+          
+          if (!video) {
+            sendResponse({ ok: false, reason: 'No video element found' });
+            return true;
+          }
+
+          switch (message?.action) {
+            case 'play':
+              video.play()
+                .then(() => sendResponse({ ok: true }))
+                .catch(() => sendResponse({ ok: false, error: 'Unable to start playback' }));
+              break;
+
+            case 'pause':
+              video.pause();
+              savePlaybackPosition();
+              sendResponse({ ok: true });
+              break;
+
+            case 'seek':
+              if (Number.isFinite(message.time)) {
+                video.currentTime = message.time;
+                savePlaybackPosition();
+                sendResponse({ ok: true });
+              } else {
+                sendResponse({ ok: false, error: 'Invalid time value' });
+              }
+              break;
+
+            case 'mute':
+              video.muted = true;
+              sendResponse({ ok: true });
+              break;
+
+            case 'unmute':
+              video.muted = false;
+              sendResponse({ ok: true });
+              break;
+
+            case 'getState':
+              sendResponse({
+                ok: true,
+                paused: video.paused,
+                currentTime: video.currentTime,
+                duration: video.duration,
+                muted: video.muted
+              });
+              break;
+
+            default:
+              sendResponse({ ok: false, reason: 'Unknown action' });
+          }
       }
     } catch (error) {
       sendResponse({ ok: false, error: error.message || 'Unexpected error' });

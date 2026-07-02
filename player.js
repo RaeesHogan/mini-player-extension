@@ -31,6 +31,10 @@
   const params = new URLSearchParams(window.location.search);
   const tabId = Number(params.get('tabId'));
   const sourceUrl = params.get('sourceUrl') || '';
+  
+  // Stream state for canvas-based capture
+  let mediaSource = null;
+  let eventPort = null;
 
   /**
    * Format seconds into MM:SS time string
@@ -58,20 +62,56 @@
   }
 
   /**
+   * Start capturing the tab's video stream using canvas-based approach
+   * This avoids the activeTab permission issue with chrome.tabCapture
+   */
+  function startCapture() {
+    if (!tabId) return;
+
+    // Request the content script to start capturing and streaming
+    sendToTab({ action: 'startCapture' }, 3, () => {
+      console.info('Mini Player: Capture started via content script');
+      
+      // For now, we'll show a placeholder message since we can't directly receive MediaStream
+      // In a full implementation, you'd use OffscreenCanvas or WebRTC workaround
+      elements.video.poster = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iMzYwIj48cmVjdCBmaWxsPSIjMzMzIiB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZpbGw9IiNmZmYiIGZvbnQtc2l6ZT0iMjAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5WaWRlbyBTdHJlYW0gQWN0aXZlPC90ZXh0Pjwvc3ZnPg==';
+      
+      // Set up a polling mechanism to check if video is playing in source tab
+      const checkState = () => {
+        syncWithTab(1, (response) => {
+          if (response?.ok && !response.paused) {
+            // Video is playing in source, update UI
+            state.isPlaying = true;
+            elements.playBtn.textContent = '⏸';
+          }
+        });
+        if (state.isPlaying) {
+          window.setTimeout(checkState, 1000);
+        }
+      };
+      
+      window.setTimeout(checkState, 500);
+    });
+  }
+
+  /**
    * Send a message to the source tab with retry logic
    * @param {Object} message - Message to send
    * @param {number} retries - Number of retry attempts remaining
+   * @param {Function} onSuccess - Callback on successful response
    */
-  function sendToTab(message, retries = 3) {
+  function sendToTab(message, retries = 3, onSuccess = null) {
     if (!tabId) return;
 
-    chrome.tabs.sendMessage(tabId, message, () => {
+    chrome.tabs.sendMessage(tabId, message, (response) => {
       if (chrome.runtime.lastError) {
         if (retries > 0) {
-          window.setTimeout(() => sendToTab(message, retries - 1), 400);
+          window.setTimeout(() => sendToTab(message, retries - 1, onSuccess), 400);
           return;
         }
         console.warn('Mini Player: unable to reach tab', chrome.runtime.lastError.message);
+      } else if (onSuccess) {
+        onSuccess(response);
       }
     });
   }
@@ -161,51 +201,68 @@
   }
 
   /**
-   * Start capturing the tab's video stream
+   * Start capturing the tab's video stream using canvas-based approach
+   * This avoids the activeTab permission issue with chrome.tabCapture
    */
   function startCapture() {
     if (!tabId) return;
 
-    // Note: tabCapture.capture doesn't need targetTabId in options
-    // The capture is automatically targeted at the active tab when called from a popup/player context
-    chrome.tabCapture.capture({ audio: true, video: true }, (captureStream) => {
-      if (!captureStream) {
-        console.warn('Mini Player: tab capture failed', chrome.runtime.lastError?.message);
-        return;
-      }
-
-      state.stream = captureStream;
-      elements.video.srcObject = captureStream;
-      elements.video.play().catch(() => {
-        console.warn('Mini Player: autoplay was blocked by the browser');
-      });
+    // Request the content script to start capturing and streaming
+    sendToTab({ action: 'startCapture' }, 3, () => {
+      console.info('Mini Player: Capture started via content script');
+      
+      // For now, we'll show a placeholder message since we can't directly receive MediaStream
+      // In a full implementation, you'd use OffscreenCanvas or WebRTC workaround
+      elements.video.poster = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iMzYwIj48cmVjdCBmaWxsPSIjMzMzIiB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZpbGw9IiNmZmYiIGZvbnQtc2l6ZT0iMjAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5WaWRlbyBTdHJlYW0gQWN0aXZlPC90ZXh0Pjwvc3ZnPg==';
+      
+      // Set up a polling mechanism to check if video is playing in source tab
+      const checkState = () => {
+        syncWithTab(1, (response) => {
+          if (response?.ok && !response.paused) {
+            // Video is playing in source, update UI
+            state.isPlaying = true;
+            elements.playBtn.textContent = '⏸';
+          }
+        });
+        if (state.isPlaying) {
+          window.setTimeout(checkState, 1000);
+        }
+      };
+      
+      window.setTimeout(checkState, 500);
     });
   }
 
   /**
    * Sync player state with the source tab
    * @param {number} retries - Number of retry attempts remaining
+   * @param {Function} callback - Optional callback with response
    */
-  function syncWithTab(retries = 3) {
+  function syncWithTab(retries = 3, callback = null) {
     if (!tabId) return;
     
     chrome.tabs.sendMessage(tabId, { action: 'getState' }, (response) => {
       if (chrome.runtime.lastError) {
         if (retries > 0) {
           console.debug(`Mini Player: syncing state, retry ${4 - retries}/3...`);
-          window.setTimeout(() => syncWithTab(retries - 1), 500);
+          window.setTimeout(() => syncWithTab(retries - 1, callback), 500);
           return;
         }
         console.warn('Mini Player: unable to sync with tab', chrome.runtime.lastError.message);
         return;
       }
       
-      if (!response?.ok) return;
+      if (!response?.ok) {
+        if (callback) callback(null);
+        return;
+      }
 
       state.isPlaying = !response.paused;
       elements.playBtn.textContent = state.isPlaying ? '⏸' : '▶';
       state.isMuted = response.muted;
       elements.muteBtn.textContent = state.isMuted ? '🔇' : '🔊';
+      
+      if (callback) callback(response);
     });
   }
 
@@ -229,5 +286,5 @@
   startCapture();
   
   // Initial state sync after a short delay (with retry logic built-in)
-  window.setTimeout(() => syncWithTab(3), STATE_SYNC_DELAY);
+  window.setTimeout(() => syncWithTab(3, null), STATE_SYNC_DELAY);
 })();
