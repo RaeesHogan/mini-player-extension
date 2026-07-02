@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mini Player</title>
+    <link rel="stylesheet" href="player.css" />
+  </head>
+  <body>
+    <video id="streamVideo" autoplay playsinline muted></video>
+    <div id="controls">
+      <button id="playBtn" title="เล่น/หยุด">▶</button>
+      <input id="seekBar" type="range" min="0" max="100" step="0.1" value="0" />
+      <span id="time">0:00 / 0:00</span>
+      <button id="muteBtn" title="เปิด/ปิดเสียง">🔊</button>
+      <button id="topToggle" title="Always on Top">⤴</button>
+    </div>
+    <script src="player.js"></script>
+  </body>
+</html>
