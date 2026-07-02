@@ -34,21 +34,25 @@
     seekBar.value = duration > 0 ? (current / duration) * 100 : 0;
   }
 
+  function sendToTab(message) {
+    if (!tabId) {
+      return;
+    }
+
+    chrome.tabs.sendMessage(tabId, message, () => {
+      if (chrome.runtime.lastError) {
+        console.warn('Mini Player: unable to reach tab', chrome.runtime.lastError.message);
+      }
+    });
+  }
+
   function togglePlayback() {
     if (isPlaying) {
-      chrome.tabs.sendMessage(tabId, { action: 'pause' }, () => {
-        if (chrome.runtime.lastError) {
-          console.warn(chrome.runtime.lastError.message);
-        }
-      });
+      sendToTab({ action: 'pause' });
       isPlaying = false;
       playBtn.textContent = '▶';
     } else {
-      chrome.tabs.sendMessage(tabId, { action: 'play' }, () => {
-        if (chrome.runtime.lastError) {
-          console.warn(chrome.runtime.lastError.message);
-        }
-      });
+      sendToTab({ action: 'play' });
       isPlaying = true;
       playBtn.textContent = '⏸';
     }
@@ -57,11 +61,7 @@
   function seekTo(value) {
     const duration = video.duration || 0;
     const time = (value / 100) * duration;
-    chrome.tabs.sendMessage(tabId, { action: 'seek', time }, () => {
-      if (chrome.runtime.lastError) {
-        console.warn(chrome.runtime.lastError.message);
-      }
-    });
+    sendToTab({ action: 'seek', time });
   }
 
   function saveWindowState() {
@@ -87,7 +87,7 @@
         topToggle.classList.add('active');
       }
       if (sourceUrl && data.videoUrl === sourceUrl) {
-        chrome.tabs.sendMessage(tabId, { action: 'seek', time: data.playbackPosition || 0 });
+        sendToTab({ action: 'seek', time: data.playbackPosition || 0 });
       }
     });
   }
@@ -107,11 +107,7 @@
   function toggleMute() {
     isMuted = !isMuted;
     const action = isMuted ? 'mute' : 'unmute';
-    chrome.tabs.sendMessage(tabId, { action }, () => {
-      if (chrome.runtime.lastError) {
-        console.warn(chrome.runtime.lastError.message);
-      }
-    });
+    sendToTab({ action });
     muteBtn.textContent = isMuted ? '🔇' : '🔊';
   }
 
@@ -122,14 +118,14 @@
 
     chrome.tabCapture.capture({ tabId, audio: true, video: true }, (captureStream) => {
       if (!captureStream) {
-        alert('ไม่สามารถจับภาพแท็บได้ กรุณาให้สิทธิ์ tab capture');
+        console.warn('Mini Player: tab capture failed');
         return;
       }
 
       stream = captureStream;
       video.srcObject = stream;
       video.play().catch(() => {
-        // Some sites block autoplay; the user can press play manually.
+        console.warn('Mini Player: autoplay was blocked by the browser');
       });
     });
   }
@@ -145,6 +141,10 @@
   video.addEventListener('loadedmetadata', updateTimeDisplay);
 
   chrome.tabs.sendMessage(tabId, { action: 'getState' }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.warn('Mini Player: tab message not available yet', chrome.runtime.lastError.message);
+      return;
+    }
     if (!response?.ok) {
       return;
     }

@@ -1,9 +1,16 @@
 (() => {
   let lastSavedTime = 0;
   let saveInterval = null;
+  let activeVideo = null;
 
   function getVideo() {
-    return document.querySelector('video');
+    if (activeVideo && document.contains(activeVideo)) {
+      return activeVideo;
+    }
+
+    const videos = Array.from(document.querySelectorAll('video'));
+    activeVideo = videos.find((video) => video.readyState >= 2 || video.duration > 0) || videos[0] || null;
+    return activeVideo;
   }
 
   function savePlaybackPosition() {
@@ -12,12 +19,16 @@
       return;
     }
 
-    const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
-    chrome.storage.local.set({
-      playbackPosition: currentTime,
-      videoUrl: window.location.href
-    });
-    lastSavedTime = currentTime;
+    try {
+      const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      chrome.storage.local.set({
+        playbackPosition: currentTime,
+        videoUrl: window.location.href
+      });
+      lastSavedTime = currentTime;
+    } catch (error) {
+      console.warn('Mini Player: unable to save playback position', error);
+    }
   }
 
   function attachVideoListeners() {
@@ -30,6 +41,7 @@
     video.addEventListener('play', savePlaybackPosition);
     video.addEventListener('pause', savePlaybackPosition);
     video.addEventListener('seeked', savePlaybackPosition);
+    video.addEventListener('loadedmetadata', savePlaybackPosition);
   }
 
   saveInterval = window.setInterval(() => {
@@ -55,58 +67,63 @@
   attachVideoListeners();
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    const video = getVideo();
-    if (!video) {
-      sendResponse({ ok: false, reason: 'No video element found' });
-      return true;
-    }
-
-    switch (message?.action) {
-      case 'play':
-        video.play()
-          .then(() => sendResponse({ ok: true }))
-          .catch(() => sendResponse({ ok: false, error: 'Unable to start playback' }));
+    try {
+      const video = getVideo();
+      if (!video) {
+        sendResponse({ ok: false, reason: 'No video element found' });
         return true;
+      }
 
-      case 'pause':
-        video.pause();
-        savePlaybackPosition();
-        sendResponse({ ok: true });
-        return true;
+      switch (message?.action) {
+        case 'play':
+          video.play()
+            .then(() => sendResponse({ ok: true }))
+            .catch(() => sendResponse({ ok: false, error: 'Unable to start playback' }));
+          return true;
 
-      case 'seek':
-        if (Number.isFinite(message.time)) {
-          video.currentTime = message.time;
+        case 'pause':
+          video.pause();
           savePlaybackPosition();
           sendResponse({ ok: true });
-        } else {
-          sendResponse({ ok: false, error: 'Invalid time value' });
-        }
-        return true;
+          return true;
 
-      case 'mute':
-        video.muted = true;
-        sendResponse({ ok: true });
-        return true;
+        case 'seek':
+          if (Number.isFinite(message.time)) {
+            video.currentTime = message.time;
+            savePlaybackPosition();
+            sendResponse({ ok: true });
+          } else {
+            sendResponse({ ok: false, error: 'Invalid time value' });
+          }
+          return true;
 
-      case 'unmute':
-        video.muted = false;
-        sendResponse({ ok: true });
-        return true;
+        case 'mute':
+          video.muted = true;
+          sendResponse({ ok: true });
+          return true;
 
-      case 'getState':
-        sendResponse({
-          ok: true,
-          paused: video.paused,
-          currentTime: video.currentTime,
-          duration: video.duration,
-          muted: video.muted
-        });
-        return true;
+        case 'unmute':
+          video.muted = false;
+          sendResponse({ ok: true });
+          return true;
 
-      default:
-        sendResponse({ ok: false, reason: 'Unknown action' });
-        return true;
+        case 'getState':
+          sendResponse({
+            ok: true,
+            paused: video.paused,
+            currentTime: video.currentTime,
+            duration: video.duration,
+            muted: video.muted
+          });
+          return true;
+
+        default:
+          sendResponse({ ok: false, reason: 'Unknown action' });
+          return true;
+      }
+    } catch (error) {
+      sendResponse({ ok: false, error: error.message || 'Unexpected error' });
+      return true;
     }
   });
 
