@@ -34,13 +34,17 @@
     seekBar.value = duration > 0 ? (current / duration) * 100 : 0;
   }
 
-  function sendToTab(message) {
+  function sendToTab(message, retries = 3) {
     if (!tabId) {
       return;
     }
 
     chrome.tabs.sendMessage(tabId, message, () => {
       if (chrome.runtime.lastError) {
+        if (retries > 0) {
+          window.setTimeout(() => sendToTab(message, retries - 1), 400);
+          return;
+        }
         console.warn('Mini Player: unable to reach tab', chrome.runtime.lastError.message);
       }
     });
@@ -116,7 +120,7 @@
       return;
     }
 
-    chrome.tabCapture.capture({ tabId, audio: true, video: true }, (captureStream) => {
+    chrome.tabCapture.capture({ audio: true, video: true }, (captureStream) => {
       if (!captureStream) {
         console.warn('Mini Player: tab capture failed');
         return;
@@ -140,19 +144,22 @@
   video.addEventListener('timeupdate', updateTimeDisplay);
   video.addEventListener('loadedmetadata', updateTimeDisplay);
 
-  chrome.tabs.sendMessage(tabId, { action: 'getState' }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.warn('Mini Player: tab message not available yet', chrome.runtime.lastError.message);
-      return;
-    }
-    if (!response?.ok) {
-      return;
-    }
-    isPlaying = !response.paused;
-    playBtn.textContent = isPlaying ? '⏸' : '▶';
-    isMuted = response.muted;
-    muteBtn.textContent = isMuted ? '🔇' : '🔊';
-  });
+  sendToTab({ action: 'getState' }, 5);
+  window.setTimeout(() => {
+    chrome.tabs.sendMessage(tabId, { action: 'getState' }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn('Mini Player: tab message not available yet', chrome.runtime.lastError.message);
+        return;
+      }
+      if (!response?.ok) {
+        return;
+      }
+      isPlaying = !response.paused;
+      playBtn.textContent = isPlaying ? '⏸' : '▶';
+      isMuted = response.muted;
+      muteBtn.textContent = isMuted ? '🔇' : '🔊';
+    });
+  }, 700);
 
   restoreWindowState();
   startCapture();
